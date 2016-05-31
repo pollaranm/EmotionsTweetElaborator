@@ -7,6 +7,7 @@ import com.mongodb.ServerAddress;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.WriteModel;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
@@ -39,6 +40,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 
 public class Loader extends HttpServlet {
 
@@ -355,8 +357,10 @@ public class Loader extends HttpServlet {
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
         System.out.println(bulkWrite.toString());
-
+        BasicDBObject indexObj = new BasicDBObject("word", 1);
+        IndexOptions indexPropObj = new IndexOptions().unique(true);
         // aggiungere gli l'indexing
+        collection.createIndex(indexObj, indexPropObj);
         mongoClient.close();
 
     }
