@@ -25,9 +25,15 @@
     </head>
     <body>
         <h1>Oracle DB Manager</h1>
-        <button id="drop">Drop ALL Database</button>
-        <button id="create">Create structure</button>
-        <button id="load">Load lexical resources</button>
-        <button id="analyze">Analyze Tweet</button>
+        <button id="dropOracle">Drop ALL Database</button>
+        <button id="createOracle">Create structure</button>
+        <button id="loadOracle">Load lexical resources</button>
+        <button id="analyzeOracle">Analyze Tweet</button>
+        <hr>
+        <h1>Mongo DB Manager</h1>
+        <button id="dropMongo">Drop ALL Database</button>
+        <button id="createMongo">Create structure</button>
+        <button id="loadMongo">Load lexical resources</button>
+        <button id="analyzeMongo">Analyze Tweet</button>
     </body>
 </html>

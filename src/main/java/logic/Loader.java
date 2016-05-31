@@ -1,5 +1,14 @@
 package logic;
 
+import com.mongodb.BasicDBObject;
+import com.mongodb.BulkWriteOperation;
+import com.mongodb.MongoClient;
+import com.mongodb.ServerAddress;
+import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.WriteModel;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
@@ -18,13 +27,18 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import static javax.servlet.SessionTrackingMode.URL;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.bson.Document;
 
 public class Loader extends HttpServlet {
 
@@ -39,12 +53,25 @@ public class Loader extends HttpServlet {
      */
     File[] sentimentsFoldersList = dir.listFiles();
 
+    /**
+     * Parametro ricevuto dalla chiamata che specifica il DB da utilizzare
+     */
+    String DBtype;
+
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        // Per ogni cartella fa partire l'elaborazione di un 'sentimento'
-        for (File sentimentFolder : sentimentsFoldersList) {
-            System.out.println("------ FOLDER " + sentimentFolder.getName() + "------");
-            elaborateSentiment(sentimentFolder);
+        DBtype = request.getParameter("DBtype");
+
+        if (DBtype == null) {
+            ServletContext ctx = getServletContext();
+            RequestDispatcher rdErr = ctx.getRequestDispatcher("/DBManager.jsp");
+            rdErr.forward(request, response);
+        } else {
+            // Per ogni cartella fa partire l'elaborazione di un 'sentimento'
+            for (File sentimentFolder : sentimentsFoldersList) {
+                System.out.println("------ FOLDER " + sentimentFolder.getName() + "------");
+                elaborateSentiment(sentimentFolder);
+            }
         }
     }
 
@@ -114,7 +141,11 @@ public class Loader extends HttpServlet {
                 }
             }
         }
-        storeInDB(sentiment.getName(), numRes, hashSentiment);
+        if (DBtype.equals("Oracle")) {
+            storeInDB(sentiment.getName(), numRes, hashSentiment);
+        } else {
+            storeInMongo(sentiment.getName(), numRes, hashSentiment);
+        }
     }
 
     /**
@@ -300,5 +331,34 @@ public class Loader extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
+
+    private void storeInMongo(String sentiment, int numRes, HashMap<String, Integer> hashSentiment) {
+//        List<ServerAddress> servers = new ArrayList<>();
+//        servers.add(new ServerAddress("localhost", 27017));
+//        servers.add(new ServerAddress("localhost", 27018));
+//        servers.add(new ServerAddress("localhost", 27019));
+//        servers.add(new ServerAddress("localhost", 27020));
+//        MongoClient mongoClient = new MongoClient(servers);
+        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+        MongoDatabase database = mongoClient.getDatabase("LabDB");
+        MongoCollection<Document> collection = database.getCollection(sentiment);
+        List<WriteModel<Document>> listOp = new LinkedList<>();
+
+        for (Map.Entry word : hashSentiment.entrySet()) {
+            Float perc_res = new Float((int) word.getValue()) / numRes * 100;
+            Document tempDoc = new Document("word", (String) word.getKey())
+                    .append("count_res", (int) word.getValue())
+                    .append("perc_res", perc_res)
+                    .append("count_tweet", 0);
+            listOp.add(new InsertOneModel<>(tempDoc));
+        }
+
+        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+        System.out.println(bulkWrite.toString());
+
+        // aggiungere gli l'indexing
+        mongoClient.close();
+
+    }
 
 }

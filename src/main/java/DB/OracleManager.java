@@ -19,7 +19,7 @@ import javax.servlet.http.HttpServletResponse;
  *
  * @author TTm
  */
-public class DBManager extends HttpServlet {
+public class OracleManager extends HttpServlet {
 
     File dir = new File("C:/Dropbox/lex_res_temp");
     File[] sentimentsFoldersList = dir.listFiles();
@@ -41,9 +41,9 @@ public class DBManager extends HttpServlet {
             ServletContext ctx = getServletContext();
             RequestDispatcher rdErr = ctx.getRequestDispatcher("/DBManager.jsp");
             rdErr.forward(request, response);
-        } else if (action.equals("drop")) {
+        } else if (action.equals("dropOracle")) {
             dropDBProcedure();
-        } else if (action.equals("create")) {
+        } else if (action.equals("createOracle")) {
             createDBProcedure();
         }
     }
