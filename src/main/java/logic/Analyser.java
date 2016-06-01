@@ -1,5 +1,16 @@
 package logic;
 
+import com.mongodb.DB;
+import com.mongodb.DBCollection;
+import com.mongodb.DBObject;
+import com.mongodb.MapReduceCommand;
+import com.mongodb.MapReduceOutput;
+import com.mongodb.MongoClient;
+import com.mongodb.ServerAddress;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.WriteModel;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
@@ -43,8 +54,12 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collection;
 import java.util.Date;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import org.bson.Document;
 
 public class Analyser extends HttpServlet {
 
@@ -107,6 +122,11 @@ public class Analyser extends HttpServlet {
      */
     LinkedList<String> punctuation = new LinkedList<String>();
 
+    /**
+     * Parametro ricevuto dalla chiamata che specifica il DB da utilizzare
+     */
+    String DBtype;
+
     // ###################################################
     // ###             DATABASE DATA                   ###
     // ###################################################
@@ -118,48 +138,75 @@ public class Analyser extends HttpServlet {
 //    String myUser = "sp138279";
 //    String myPass = "testtest";
 
+    /**
+     * Client di connessione a MongoDB
+     */
+    MongoClient mongoClient;
+
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+        DBtype = request.getParameter("DBtype");
 
-        /**
-         * Timestamp di inizio elaborazione
-         */
-        Date d1 = new Date();
+        if (DBtype == null) {
+            ServletContext ctx = getServletContext();
+            RequestDispatcher rdErr = ctx.getRequestDispatcher("/DBManager.jsp");
+            rdErr.forward(request, response);
+        } else {
 
-        loadEmoticons();
-        loadSlangs();
-        loadStopwords();
-        loadPunctuation();
-        loadEmoji();
+            if (DBtype.equals("Mongo")) {
+//        List<ServerAddress> servers = new ArrayList<>();
+//        servers.add(new ServerAddress("localhost", 27017));
+//        servers.add(new ServerAddress("localhost", 27018));
+//        servers.add(new ServerAddress("localhost", 27019));
+//        servers.add(new ServerAddress("localhost", 27020));
+//        mongoClient = new MongoClient(servers);
+                mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+            }
+            /**
+             * Timestamp di inizio elaborazione
+             */
+            Date d1 = new Date();
 
-        // Per ogni cartella fa partire l'elaborazione di un 'sentimento'
-        for (File sentimentFolder : sentimentsFoldersList) {
-            System.out.println("------ SENTIMENT " + sentimentFolder.getName() + "------");
-            elaborateSentiment(sentimentFolder);
+            loadEmoticons();
+            loadSlangs();
+            loadStopwords();
+            loadPunctuation();
+            loadEmoji();
+
+            // Per ogni cartella fa partire l'elaborazione di un 'sentimento'
+            for (File sentimentFolder : sentimentsFoldersList) {
+                System.out.println("------ SENTIMENT " + sentimentFolder.getName() + "------");
+                elaborateSentiment(sentimentFolder);
+            }
+            System.out.println("\n\nElaboration Complete!\n\n");
+
+            /**
+             * Terminata la fase di elaborazione dei tweet, raccolti i risultati
+             * nelle strutture dati temporanee si procede al salvataggio su DB
+             */
+            if (DBtype.equals("Oracle")) {
+                storeResultsOperationOracle();
+            } else {
+                storeResultsOperationMongo();
+                mongoClient.close();
+            }
+
+            /**
+             * Timestamp di fine elaborazione
+             */
+            Date d2 = new Date();
+            long diff = d2.getTime() - d1.getTime();
+
+            long diffSeconds = diff / 1000 % 60;
+            long diffMinutes = diff / (60 * 1000) % 60;
+            long diffHours = diff / (60 * 60 * 1000) % 24;
+            long diffDays = diff / (24 * 60 * 60 * 1000);
+
+            System.out.print(diffDays + " days, ");
+            System.out.print(diffHours + " hours, ");
+            System.out.print(diffMinutes + " minutes, ");
+            System.out.print(diffSeconds + " seconds.");
         }
-        System.out.println("\n\nElaboration Complete!\n\n");
-
-        /**
-         * Terminata la fase di elaborazione dei tweet, raccolti i risultati
-         * nelle strutture dati temporanee si procede al salvataggio su DB
-         */
-        storeResultsOperation();
-
-        /**
-         * Timestamp di fine elaborazione
-         */
-        Date d2 = new Date();
-        long diff = d2.getTime() - d1.getTime();
-
-        long diffSeconds = diff / 1000 % 60;
-        long diffMinutes = diff / (60 * 1000) % 60;
-        long diffHours = diff / (60 * 60 * 1000) % 24;
-        long diffDays = diff / (24 * 60 * 60 * 1000);
-
-        System.out.print(diffDays + " days, ");
-        System.out.print(diffHours + " hours, ");
-        System.out.print(diffMinutes + " minutes, ");
-        System.out.print(diffSeconds + " seconds.");
     }
 
     /**
@@ -198,8 +245,14 @@ public class Analyser extends HttpServlet {
                 // se fossimo in grado di trattare gli emoji attaccati non sarebbe necessario
                 contentString = processUnknownItem(contentString);
                 //
-                contentString = processWord(contentString, sentimentFolder.getName());
-                contentString = processStopwords(contentString);
+                if (DBtype.equals("Oracle")) {
+                    contentString = processWord(contentString, sentimentFolder.getName());
+                    contentString = processStopwords(contentString);
+                } else {
+                    contentString = lemmingProcess(contentString);
+                    storeTweetInMongo(contentString, sentimentFolder.getName());
+                    processWordMongo(sentimentFolder.getName());
+                }
 
                 Files.write(destination, contentString.getBytes(charset));
             } catch (IOException ex) {
@@ -250,7 +303,7 @@ public class Analyser extends HttpServlet {
             // Analizza ogni riga del file l'aggiunge alla hash globale
             while ((sCurrentLine = br.readLine()) != null) {
                 String[] parts = sCurrentLine.split(":");
-                slangs.put(" " + parts[0] + " ", " " + parts[1] + " ");
+                slangs.put(parts[0], parts[1]);
             }
         } catch (FileNotFoundException ex) {
             Logger.getLogger(Analyser.class
@@ -766,7 +819,7 @@ public class Analyser extends HttpServlet {
      * emoticons, gli emoji, gli hashtag, le occorrenze delle vecchie risorse
      * lessicali e l'individuazione e conteggio delle nuove parole trovate.
      */
-    private void storeResultsOperation() {
+    private void storeResultsOperationOracle() {
         try {
             Class.forName(myDriver);
             Connection conn = DriverManager.getConnection(myUrl, myUser, myPass);
@@ -1119,4 +1172,95 @@ public class Analyser extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
+
+    private void storeResultsOperationMongo() {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private String lemmingProcess(String text) {
+        System.out.println("Lemming words ... ");
+        StrBuilder elaboratedText = new StrBuilder();
+        Properties props = new Properties();
+        props.put("annotators", "tokenize, ssplit, pos, lemma");
+        StanfordCoreNLP pipeline = new StanfordCoreNLP(props, false);
+        Pattern pattern = Pattern.compile("^[a-z0-9]{2,50}$");
+        try {
+            BufferedReader br = new BufferedReader(new StringReader(text));
+            String sCurrentLine;
+            while ((sCurrentLine = br.readLine()) != null) {
+                try {
+                    Annotation document = pipeline.process(sCurrentLine);
+                    for (CoreMap sentence : document.get(CoreAnnotations.SentencesAnnotation.class)) {
+                        for (CoreLabel token : sentence.get(CoreAnnotations.TokensAnnotation.class)) {
+                            String tokenString = token.get(CoreAnnotations.TextAnnotation.class);
+                            Matcher matcher = pattern.matcher(tokenString);
+                            if (tokenString.length() > 2 && tokenString.length() <= 50
+                                    && !StringUtils.isNumeric(tokenString) && !tokenString.contains("'")
+                                    && matcher.matches()) {
+                                String lemma = token.get(CoreAnnotations.LemmaAnnotation.class);
+                                elaboratedText.append(" " + lemma);
+                            }
+                        }
+                        elaboratedText.appendNewLine();
+                    }
+                } catch (edu.stanford.nlp.util.RuntimeInterruptedException ex) {
+                    System.out.println("### L'input ha generato un errore in stanford.nlp ###");
+                    System.out.println(sCurrentLine);
+                    System.out.println("### L'esecuzione verrà ripresa saltando la riga ###");
+                    continue;
+                }
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(Analyser.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        System.out.print("PROCESSED");
+        return elaboratedText.toString();
+    }
+
+    private void storeTweetInMongo(String text, String sentiment) {
+        try {
+            MongoDatabase database = mongoClient.getDatabase("LabDB");
+            MongoCollection<Document> collection = database.getCollection(sentiment + "_tweet");
+            List<WriteModel<Document>> listOp = new LinkedList<>();
+
+            BufferedReader br = new BufferedReader(new StringReader(text));
+            String sCurrentLine;
+            while ((sCurrentLine = br.readLine()) != null) {
+                Document tempDoc = new Document("text", sCurrentLine);
+                listOp.add(new InsertOneModel<>(tempDoc));
+            }
+            collection.bulkWrite(listOp);
+            // TO-DO : inserire l'abilitazione allo sharding, prima o dopo 
+        } catch (IOException ex) {
+            Logger.getLogger(Analyser.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    private void processWordMongo(String sentiment) {
+        String map = "function() {"
+                + "var splittedTweet = this.text.split(' ');"
+                + "for( i in splittedTweet ) {"
+                + "  emit( splittedTweet[i], 1 );"
+                + "}"
+                + "};";
+
+        String reduce = "function(key, values){"
+                + "var count = 0;"
+                + "for(i in values){"
+                + "  count += values[i];"
+                + "}"
+                + "return count;"
+                +"};";
+
+        DB database = mongoClient.getDB("LabDB");
+        DBCollection collection = database.getCollection(sentiment + "_tweet");
+
+        MapReduceCommand cmd = new MapReduceCommand(collection, map, reduce, null, MapReduceCommand.OutputType.INLINE, null);
+        MapReduceOutput out = collection.mapReduce(cmd);
+
+        for (DBObject o : out.results()) {
+            System.out.println(o.toString());
+        }
+
+    }
 }
