@@ -356,10 +356,9 @@ public class Loader extends HttpServlet {
         }
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-        System.out.println(bulkWrite.toString());
+        //System.out.println(bulkWrite.toString());
         BasicDBObject indexObj = new BasicDBObject("word", 1);
         IndexOptions indexPropObj = new IndexOptions().unique(true);
-        // aggiungere gli l'indexing
         collection.createIndex(indexObj, indexPropObj);
         mongoClient.close();
 

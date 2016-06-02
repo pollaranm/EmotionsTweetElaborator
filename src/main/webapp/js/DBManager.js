@@ -121,7 +121,7 @@ $(document).on("click", "#loadMongo", function () {
     });
 });
 
-$(document).on("click", "#analyzeOracle", function () {
+$(document).on("click", "#analyzeMongo", function () {
     alertify.confirm("Are you sure you want to START THE ANALYSIS of Tweets?", function (e) {
         if (e) {
             // user clicked "ok"

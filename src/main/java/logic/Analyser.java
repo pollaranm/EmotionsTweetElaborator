@@ -1,5 +1,6 @@
 package logic;
 
+import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
@@ -7,10 +8,14 @@ import com.mongodb.MapReduceCommand;
 import com.mongodb.MapReduceOutput;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
+import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import static com.mongodb.client.model.Filters.eq;
 import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
+import com.mongodb.operation.FindAndUpdateOperation;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
@@ -143,6 +148,11 @@ public class Analyser extends HttpServlet {
      */
     MongoClient mongoClient;
 
+    /**
+     * Nome del database Mongo
+     */
+    String mongoDBname = "LabDB";
+
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         DBtype = request.getParameter("DBtype");
@@ -254,7 +264,7 @@ public class Analyser extends HttpServlet {
                     processWordMongo(sentimentFolder.getName());
                 }
 
-                Files.write(destination, contentString.getBytes(charset));
+                //Files.write(destination, contentString.getBytes(charset));
             } catch (IOException ex) {
                 Logger.getLogger(Analyser.class
                         .getName()).log(Level.SEVERE, null, ex);
@@ -676,8 +686,8 @@ public class Analyser extends HttpServlet {
      * permettere il confronto.
      *
      * @param text Testo in input da elaborare.
-     * @param sentiment
-     * @return
+     * @param sentiment Sentimento di riferimento per i tweet
+     * @return Il testo eleborato e lemmizzato
      */
     private String processWord(String text, String sentiment) {
         System.out.println("Words ... ");
@@ -995,7 +1005,7 @@ public class Analyser extends HttpServlet {
      * Procedura di salvataggio dei risultati degli hashtag. La procedura inizia
      * cancellando la (possibile) precedente tabella e ricreandone una nuova.
      * Per ogni hashtag viene creato un record avente nei suoi campi il
-     * canteggio delle occorrenze riscontrate nei tweet, divise per sentimento.
+     * conteggio delle occorrenze riscontrate nei tweet, divise per sentimento.
      *
      * @param conn Connessione al DB
      */
@@ -1134,49 +1144,21 @@ public class Analyser extends HttpServlet {
         System.out.println("COMPLETE!");
     }
 
-    // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
-    /**
-     * Handles the HTTP <code>GET</code> method.
-     *
-     * @param request servlet request
-     * @param response servlet response
-     * @throws ServletException if a servlet-specific error occurs
-     * @throws IOException if an I/O error occurs
-     */
-    @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        processRequest(request, response);
-    }
-
-    /**
-     * Handles the HTTP <code>POST</code> method.
-     *
-     * @param request servlet request
-     * @param response servlet response
-     * @throws ServletException if a servlet-specific error occurs
-     * @throws IOException if an I/O error occurs
-     */
-    @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        processRequest(request, response);
-    }
-
-    /**
-     * Returns a short description of the servlet.
-     *
-     * @return a String containing servlet description
-     */
-    @Override
-    public String getServletInfo() {
-        return "Short description";
-    }// </editor-fold>
-
     private void storeResultsOperationMongo() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        storeEmoticonsIntoMongo();
+        storeEmojiIntoMongo();
+        storeHashtagsIntoMongo();
+        storeOldWordsIntoMongo();
+        storeNewWordsIntoMongo();
     }
 
+    /**
+     * Processa il testo in input effettuando la lemmizzazione di ogni sua
+     * parola.
+     *
+     * @param text Testo da processare
+     * @return Testo lemmizzato
+     */
     private String lemmingProcess(String text) {
         System.out.println("Lemming words ... ");
         StrBuilder elaboratedText = new StrBuilder();
@@ -1217,9 +1199,18 @@ public class Analyser extends HttpServlet {
         return elaboratedText.toString();
     }
 
+    /**
+     * Analizza il testo ricevuto in input al quale viene associato un tweet per
+     * ogni riga, dopodichè ne effettua il caricamento su database Mongo. A fine
+     * caricamento imposta lo sharding della collezione per parallelizzare i
+     * calcoli successivi.
+     *
+     * @param text Testo di input da suddividere in tweet e caricare in DB
+     * @param sentiment Sentimento associato ai tweet
+     */
     private void storeTweetInMongo(String text, String sentiment) {
         try {
-            MongoDatabase database = mongoClient.getDatabase("LabDB");
+            MongoDatabase database = mongoClient.getDatabase(mongoDBname);
             MongoCollection<Document> collection = database.getCollection(sentiment + "_tweet");
             List<WriteModel<Document>> listOp = new LinkedList<>();
 
@@ -1236,6 +1227,14 @@ public class Analyser extends HttpServlet {
         }
     }
 
+    /**
+     * Procedura per l'elaborazione delle singole parole. Vengono conteggiate le
+     * parole già presenti nelle risorse lessicali in DB e salvate le nuove
+     * parole incontrate nell'analisi dei tweet che devono già essere caricati
+     * nel database Mongo.
+     *
+     * @param sentiment Sentimento di riferimento per i tweet
+     */
     private void processWordMongo(String sentiment) {
         String map = "function() {"
                 + "var splittedTweet = this.text.split(' ');"
@@ -1250,17 +1249,261 @@ public class Analyser extends HttpServlet {
                 + "  count += values[i];"
                 + "}"
                 + "return count;"
-                +"};";
+                + "};";
 
-        DB database = mongoClient.getDB("LabDB");
+        DB database = mongoClient.getDB(mongoDBname);
         DBCollection collection = database.getCollection(sentiment + "_tweet");
 
         MapReduceCommand cmd = new MapReduceCommand(collection, map, reduce, null, MapReduceCommand.OutputType.INLINE, null);
         MapReduceOutput out = collection.mapReduce(cmd);
 
         for (DBObject o : out.results()) {
-            System.out.println(o.toString());
+            String lemma = (String) o.get("_id");
+            Integer count = ((Double) o.get("value")).intValue();
+            if (lemma.length() > 2) {
+                if (isAlreadyResLexMongo(lemma, sentiment)) {
+                    oldWords.get(sentiment).put(lemma, count);
+                } else {
+                    newWords.get(sentiment).put(lemma, count);
+                }
+            }
+
+        }
+    }
+
+    /**
+     * Controlla che un lemma sia presente come risorsa lessicale di un dato
+     * sentimento, controllando nel DB Mongo.
+     *
+     * @param lemma Parola da controllare
+     * @param sentiment Sentimento associato
+     * @return <code>true</code> se è già una risorsa lessicale,
+     * <code>false</code> altrimenti
+     */
+    private boolean isAlreadyResLexMongo(String lemma, String sentiment) {
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+        MongoCollection collection = database.getCollection(sentiment);
+        boolean answer = collection.find(eq("word", lemma)).iterator().hasNext();
+        return  answer;
+    }
+
+    // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
+    /**
+     * Handles the HTTP <code>GET</code> method.
+     *
+     * @param request servlet request
+     * @param response servlet response
+     * @throws ServletException if a servlet-specific error occurs
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    /**
+     * Handles the HTTP <code>POST</code> method.
+     *
+     * @param request servlet request
+     * @param response servlet response
+     * @throws ServletException if a servlet-specific error occurs
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    /**
+     * Returns a short description of the servlet.
+     *
+     * @return a String containing servlet description
+     */
+    @Override
+    public String getServletInfo() {
+        return "Short description";
+    }// </editor-fold>
+
+    /**
+     * Procedura di salvataggio dei risultati delle emoticons in MongoDB. La
+     * procedura inizia cancellando la (possibile) precedente collezione e
+     * ricreandone una nuova. Per ogni emoticon viene creato un record avente
+     * nei suoi campi il canteggio delle occorrenze riscontrate nei tweet,
+     * divise per sentimento.
+     */
+    private void storeEmoticonsIntoMongo() {
+        System.out.println("Saving EMOTICON ... ");
+        DB db = mongoClient.getDB(mongoDBname);
+        if (db.collectionExists("emoticon")) {
+            DBCollection myCollection = db.getCollection("emoticon");
+            myCollection.drop();
         }
 
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+        MongoCollection<Document> collection = database.getCollection("emoticon");
+        List<WriteModel<Document>> listOp = new LinkedList<>();
+
+        for (Map.Entry emo : emoticons.entrySet()) {
+            String id = (String) emo.getKey();
+            Document tempDoc = new Document("emoticon", id);
+
+            HashMap<String, Integer> sentimentsHash = (HashMap<String, Integer>) emo.getValue();
+            for (File sentiment : sentimentsFoldersList) {
+                if (sentimentsHash.containsKey(sentiment.getName())) {
+                    tempDoc.append(sentiment.getName(), sentimentsHash.get(sentiment.getName()));
+                } else {
+                    tempDoc.append(sentiment.getName(), 0);
+                }
+            }
+            listOp.add(new InsertOneModel<>(tempDoc));
+        }
+
+        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+        //System.out.println(bulkWrite.toString());
+        System.out.println("COMPLETE!");
+    }
+
+    /**
+     * Procedura di salvataggio dei risultati degli emoji in MongoDB. La
+     * procedura inizia cancellando la (possibile) precedente collezione e
+     * ricreandone una nuova. Per ogni emoji viene creato un record avente nei
+     * suoi campi il canteggio delle occorrenze riscontrate nei tweet, divise
+     * per sentimento.
+     */
+    private void storeEmojiIntoMongo() {
+        System.out.println("Saving EMOJI ... ");
+        DB db = mongoClient.getDB(mongoDBname);
+        if (db.collectionExists("emoji")) {
+            DBCollection myCollection = db.getCollection("emoji");
+            myCollection.drop();
+        }
+
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+        MongoCollection<Document> collection = database.getCollection("emoji");
+        List<WriteModel<Document>> listOp = new LinkedList<>();
+
+        for (Map.Entry emo : emoji.entrySet()) {
+            String alias = (String) emo.getKey();
+            String html = EmojiManager.getForAlias(alias).getHtml();
+
+            Document tempDoc = new Document("alias", alias)
+                    .append("html", html);
+
+            HashMap<String, Integer> sentimentsHash = (HashMap<String, Integer>) emo.getValue();
+            for (File sentiment : sentimentsFoldersList) {
+                if (sentimentsHash.containsKey(sentiment.getName())) {
+                    tempDoc.append(sentiment.getName(), sentimentsHash.get(sentiment.getName()));
+                } else {
+                    tempDoc.append(sentiment.getName(), 0);
+                }
+            }
+            listOp.add(new InsertOneModel<>(tempDoc));
+        }
+
+        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+        //System.out.println(bulkWrite.toString());
+        System.out.println("COMPLETE!");
+    }
+
+    /**
+     * Procedura di salvataggio dei risultati degli hashtag in MongoDB. La
+     * procedura inizia cancellando la (possibile) precedente collezione e
+     * ricreandone una nuova. Per ogni hashtag viene creato un record avente nei
+     * suoi campi il conteggio delle occorrenze riscontrate nei tweet, divise
+     * per sentimento.
+     */
+    private void storeHashtagsIntoMongo() {
+        System.out.println("Saving HASHTAG ... ");
+        DB db = mongoClient.getDB(mongoDBname);
+        if (db.collectionExists("hashtag")) {
+            DBCollection myCollection = db.getCollection("hashtag");
+            myCollection.drop();
+        }
+
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+        MongoCollection<Document> collection = database.getCollection("hashtag");
+        List<WriteModel<Document>> listOp = new LinkedList<>();
+
+        for (Map.Entry tag : hashtags.entrySet()) {
+            String id = (String) tag.getKey();
+            HashMap<String, Integer> sentimentsHash = (HashMap<String, Integer>) tag.getValue();
+
+            Document tempDoc = new Document("hashtag", id);
+
+            for (File sentiment : sentimentsFoldersList) {
+                if (sentimentsHash.containsKey(sentiment.getName())) {
+                    tempDoc.append(sentiment.getName(), sentimentsHash.get(sentiment.getName()));
+                } else {
+                    tempDoc.append(sentiment.getName(), 0);
+                }
+            }
+            listOp.add(new InsertOneModel<>(tempDoc));
+        }
+
+        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+        //System.out.println(bulkWrite.toString());
+        System.out.println("COMPLETE!");
+    }
+
+    /**
+     * Procedura di salvataggio per le risorse lessicali già presenti in
+     * MongoDB. Per ogni sentimento vengono create delle query di update per le
+     * parole ritrovate all'interno dei tweet.
+     */
+    private void storeOldWordsIntoMongo() {
+        System.out.println("Saving OLDWORD ... ");
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+
+        for (Map.Entry sentiment : oldWords.entrySet()) {
+            MongoCollection<Document> collection = database.getCollection((String) sentiment.getKey());
+            List<WriteModel<Document>> listOp = new LinkedList<>();
+
+            HashMap<String, Integer> sentimentWords = (HashMap<String, Integer>) sentiment.getValue();
+            for (Map.Entry word : sentimentWords.entrySet()) {
+                BasicDBObject query = new BasicDBObject("word", (String) word.getKey());
+                BasicDBObject update = new BasicDBObject();
+                update.put("$set", new BasicDBObject("count_tweet", (Integer) word.getValue()));
+                listOp.add(new UpdateOneModel<>(query, update));
+//                    new UpdateOneModel<>(new Document("_id", 1),
+//                            new Document("$set", new Document("x", 2)));
+            }
+            BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+            //System.out.println(bulkWrite.toString());
+
+        }
+
+        System.out.println("COMPLETE!");
+    }
+
+    /**
+     * Procedura di salvataggio delle nuove parole trovate nei tweet. Per ogni
+     * sentimento vengono create delle query di insert contenenti anche i dati
+     * relativi al conteggio delle nuove parole che amplieranno le risorse
+     * lessicali precedentemente caricate in DB.
+     */
+    private void storeNewWordsIntoMongo() {
+        System.out.println("Saving NEWWORD ... ");
+        MongoDatabase database = mongoClient.getDatabase(mongoDBname);
+
+        for (Map.Entry sentiment : newWords.entrySet()) {
+            MongoCollection<Document> collection = database.getCollection((String) sentiment.getKey());
+            List<WriteModel<Document>> listOp = new LinkedList<>();
+
+            HashMap<String, Integer> sentimentWords = (HashMap<String, Integer>) sentiment.getValue();
+            for (Map.Entry word : sentimentWords.entrySet()) {
+                Document tempDoc = new Document("word", (String) word.getKey())
+                        .append("count_res", 0)
+                        .append("perc_res", 0)
+                        .append("count_tweet", (int) word.getValue());
+                listOp.add(new InsertOneModel<>(tempDoc));
+            }
+            BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+            //System.out.println(bulkWrite.toString());
+
+        }
+
+        System.out.println("COMPLETE!");
     }
 }
