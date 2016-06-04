@@ -2,6 +2,8 @@ package logic;
 
 import com.mongodb.BasicDBObject;
 import com.mongodb.BulkWriteOperation;
+import com.mongodb.CommandResult;
+import com.mongodb.DBObject;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 import com.mongodb.bulk.BulkWriteResult;
@@ -27,6 +29,7 @@ import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -341,11 +344,21 @@ public class Loader extends HttpServlet {
 //        servers.add(new ServerAddress("localhost", 27019));
 //        servers.add(new ServerAddress("localhost", 27020));
 //        MongoClient mongoClient = new MongoClient(servers);
-        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
         MongoDatabase database = mongoClient.getDatabase("LabDB");
         MongoCollection<Document> collection = database.getCollection(sentiment);
         List<WriteModel<Document>> listOp = new LinkedList<>();
 
+        BasicDBObject indexObj = new BasicDBObject("word", 1);
+//        IndexOptions indexPropObj = new IndexOptions().unique(true);
+//        collection.createIndex(indexObj, indexPropObj);
+        collection.createIndex(indexObj);
+
+        BasicDBObject cmd = new BasicDBObject("shardCollection", "LabDB." + sentiment)
+                .append("key", new BasicDBObject("word", 1));
+        CommandResult res = mongoClient.getDB("admin").command(cmd);
+
+//        System.out.println(res.toString());
         for (Map.Entry word : hashSentiment.entrySet()) {
             Float perc_res = new Float((int) word.getValue()) / numRes * 100;
             Document tempDoc = new Document("word", (String) word.getKey())
@@ -357,9 +370,7 @@ public class Loader extends HttpServlet {
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
         //System.out.println(bulkWrite.toString());
-        BasicDBObject indexObj = new BasicDBObject("word", 1);
-        IndexOptions indexPropObj = new IndexOptions().unique(true);
-        collection.createIndex(indexObj, indexPropObj);
+
         mongoClient.close();
 
     }

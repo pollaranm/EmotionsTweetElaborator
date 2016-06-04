@@ -1,6 +1,7 @@
 package logic;
 
 import com.mongodb.BasicDBObject;
+import com.mongodb.CommandResult;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
@@ -170,7 +171,7 @@ public class Analyser extends HttpServlet {
 //        servers.add(new ServerAddress("localhost", 27019));
 //        servers.add(new ServerAddress("localhost", 27020));
 //        mongoClient = new MongoClient(servers);
-                mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+                mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
             }
             /**
              * Timestamp di inizio elaborazione
@@ -1209,11 +1210,22 @@ public class Analyser extends HttpServlet {
      * @param sentiment Sentimento associato ai tweet
      */
     private void storeTweetInMongo(String text, String sentiment) {
+        System.out.println("Store Tweet in Mongo ... ");
         try {
             MongoDatabase database = mongoClient.getDatabase(mongoDBname);
             MongoCollection<Document> collection = database.getCollection(sentiment + "_tweet");
             List<WriteModel<Document>> listOp = new LinkedList<>();
 
+            BasicDBObject indexObj = new BasicDBObject("_id", "hashed");
+//        IndexOptions indexPropObj = new IndexOptions().unique(true);
+//        collection.createIndex(indexObj, indexPropObj);
+            collection.createIndex(indexObj);
+
+            BasicDBObject cmd = new BasicDBObject("shardCollection", mongoDBname + "." + sentiment + "_tweet")
+                    .append("key", new BasicDBObject("_id", "hashed"));
+            CommandResult res = mongoClient.getDB("admin").command(cmd);
+
+//        System.out.println(res.toString());
             BufferedReader br = new BufferedReader(new StringReader(text));
             String sCurrentLine;
             while ((sCurrentLine = br.readLine()) != null) {
@@ -1225,6 +1237,7 @@ public class Analyser extends HttpServlet {
         } catch (IOException ex) {
             Logger.getLogger(Analyser.class.getName()).log(Level.SEVERE, null, ex);
         }
+        System.out.println("DONE");
     }
 
     /**
@@ -1236,6 +1249,7 @@ public class Analyser extends HttpServlet {
      * @param sentiment Sentimento di riferimento per i tweet
      */
     private void processWordMongo(String sentiment) {
+        System.out.println("Words ... ");
         String map = "function() {"
                 + "var splittedTweet = this.text.split(' ');"
                 + "for( i in splittedTweet ) {"
@@ -1269,6 +1283,7 @@ public class Analyser extends HttpServlet {
             }
 
         }
+        System.out.println("PROCESSED");
     }
 
     /**
@@ -1284,7 +1299,7 @@ public class Analyser extends HttpServlet {
         MongoDatabase database = mongoClient.getDatabase(mongoDBname);
         MongoCollection collection = database.getCollection(sentiment);
         boolean answer = collection.find(eq("word", lemma)).iterator().hasNext();
-        return  answer;
+        return answer;
     }
 
     // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">

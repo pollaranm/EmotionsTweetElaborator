@@ -5,7 +5,11 @@
  */
 package DB;
 
+import com.mongodb.BasicDBObject;
+import com.mongodb.CommandResult;
+import com.mongodb.DBObject;
 import com.mongodb.MongoClient;
+import com.mongodb.MongoClientOptions;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoDatabase;
 import java.io.File;
@@ -47,14 +51,14 @@ public class MongoManager extends HttpServlet {
 //        servers.add(new ServerAddress("localhost", 27019));
 //        servers.add(new ServerAddress("localhost", 27020));
 //        MongoClient mongoClient = new MongoClient(servers);
-        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
 
         if (action.equals("dropMongo")) {
             dropMongoProcedure(mongoClient);
         } else if (action.equals("createMongo")) {
             createMongoProcedure(mongoClient);
         }
-        
+
         mongoClient.close();
 
     }
@@ -109,6 +113,7 @@ public class MongoManager extends HttpServlet {
         for (File sentiment : sentimentsFoldersList) {
             mongoClient.getDatabase("LabDB").createCollection(sentiment.getName());
         }
+        CommandResult res = mongoClient.getDB("admin").command(new BasicDBObject("enableSharding", "LabDB"));
     }
 
 }
