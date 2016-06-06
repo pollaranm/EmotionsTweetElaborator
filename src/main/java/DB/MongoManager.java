@@ -1,8 +1,3 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package DB;
 
 import com.mongodb.BasicDBObject;
@@ -24,10 +19,6 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-/**
- *
- * @author TTm
- */
 public class MongoManager extends HttpServlet {
 
     File dir = new File("C:/Dropbox/lex_res_temp");
@@ -44,13 +35,10 @@ public class MongoManager extends HttpServlet {
             rdErr.forward(request, response);
         }
 
-        // Creo la lista dei server di tipologia 'SHARD' a cui mi connetterò
-//        List<ServerAddress> servers = new ArrayList<>();
-//        servers.add(new ServerAddress("localhost", 27017));
-//        servers.add(new ServerAddress("localhost", 27018));
-//        servers.add(new ServerAddress("localhost", 27019));
-//        servers.add(new ServerAddress("localhost", 27020));
-//        MongoClient mongoClient = new MongoClient(servers);
+        // Connessione alla singola istanza di MongoDB (mongod)
+        //MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+        
+        // Connessione all'istanza Query Router del cluster (mongos)
         MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
 
         if (action.equals("dropMongo")) {
@@ -61,6 +49,27 @@ public class MongoManager extends HttpServlet {
 
         mongoClient.close();
 
+    }
+
+    /**
+     * Procedura per l'eliminazione di ogni tabella dal database.
+     */
+    private void dropMongoProcedure(MongoClient mongoClient) {
+        MongoDatabase database = mongoClient.getDatabase("LabDB");
+        if (database != null) {
+            mongoClient.dropDatabase("LabDB");
+        }
+    }
+
+    /**
+     * Crea una collezione per ogni cartella/sentimento presente nella directory
+     * puntata dalla variabile 'dir' in testa alla classe e ne abilita lo sharding.
+     */
+    private void createMongoProcedure(MongoClient mongoClient) {
+        for (File sentiment : sentimentsFoldersList) {
+            mongoClient.getDatabase("LabDB").createCollection(sentiment.getName());
+        }
+        CommandResult res = mongoClient.getDB("admin").command(new BasicDBObject("enableSharding", "LabDB"));
     }
 
     // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
@@ -101,19 +110,5 @@ public class MongoManager extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
-
-    private void dropMongoProcedure(MongoClient mongoClient) {
-        MongoDatabase database = mongoClient.getDatabase("LabDB");
-        if (database != null) {
-            mongoClient.dropDatabase("LabDB");
-        }
-    }
-
-    private void createMongoProcedure(MongoClient mongoClient) {
-        for (File sentiment : sentimentsFoldersList) {
-            mongoClient.getDatabase("LabDB").createCollection(sentiment.getName());
-        }
-        CommandResult res = mongoClient.getDB("admin").command(new BasicDBObject("enableSharding", "LabDB"));
-    }
 
 }

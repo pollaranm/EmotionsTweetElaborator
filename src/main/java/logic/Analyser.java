@@ -165,14 +165,13 @@ public class Analyser extends HttpServlet {
         } else {
 
             if (DBtype.equals("Mongo")) {
-//        List<ServerAddress> servers = new ArrayList<>();
-//        servers.add(new ServerAddress("localhost", 27017));
-//        servers.add(new ServerAddress("localhost", 27018));
-//        servers.add(new ServerAddress("localhost", 27019));
-//        servers.add(new ServerAddress("localhost", 27020));
-//        mongoClient = new MongoClient(servers);
-                mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
+                // Connessione alla singola istanza di MongoDB (mongod)
+                //MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+
+                // Connessione all'istanza Query Router del cluster (mongos)
+                MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
             }
+
             /**
              * Timestamp di inizio elaborazione
              */
@@ -265,7 +264,7 @@ public class Analyser extends HttpServlet {
                     processWordMongo(sentimentFolder.getName());
                 }
 
-                //Files.write(destination, contentString.getBytes(charset));
+                Files.write(destination, contentString.getBytes(charset));
             } catch (IOException ex) {
                 Logger.getLogger(Analyser.class
                         .getName()).log(Level.SEVERE, null, ex);
@@ -1145,14 +1144,6 @@ public class Analyser extends HttpServlet {
         System.out.println("COMPLETE!");
     }
 
-    private void storeResultsOperationMongo() {
-        storeEmoticonsIntoMongo();
-        storeEmojiIntoMongo();
-        storeHashtagsIntoMongo();
-        storeOldWordsIntoMongo();
-        storeNewWordsIntoMongo();
-    }
-
     /**
      * Processa il testo in input effettuando la lemmizzazione di ogni sua
      * parola.
@@ -1217,15 +1208,12 @@ public class Analyser extends HttpServlet {
             List<WriteModel<Document>> listOp = new LinkedList<>();
 
             BasicDBObject indexObj = new BasicDBObject("_id", "hashed");
-//        IndexOptions indexPropObj = new IndexOptions().unique(true);
-//        collection.createIndex(indexObj, indexPropObj);
             collection.createIndex(indexObj);
 
             BasicDBObject cmd = new BasicDBObject("shardCollection", mongoDBname + "." + sentiment + "_tweet")
                     .append("key", new BasicDBObject("_id", "hashed"));
             CommandResult res = mongoClient.getDB("admin").command(cmd);
 
-//        System.out.println(res.toString());
             BufferedReader br = new BufferedReader(new StringReader(text));
             String sCurrentLine;
             while ((sCurrentLine = br.readLine()) != null) {
@@ -1233,7 +1221,6 @@ public class Analyser extends HttpServlet {
                 listOp.add(new InsertOneModel<>(tempDoc));
             }
             collection.bulkWrite(listOp);
-            // TO-DO : inserire l'abilitazione allo sharding, prima o dopo 
         } catch (IOException ex) {
             Logger.getLogger(Analyser.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -1302,44 +1289,21 @@ public class Analyser extends HttpServlet {
         return answer;
     }
 
-    // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
     /**
-     * Handles the HTTP <code>GET</code> method.
-     *
-     * @param request servlet request
-     * @param response servlet response
-     * @throws ServletException if a servlet-specific error occurs
-     * @throws IOException if an I/O error occurs
+     * Procedura per il salvataggio dei risultati invocata a fine elaborazione
+     * di tutti i file contenenenti tweet. Memorizza i vari risultati nelle
+     * collezioni del database Mongo. I risultati che verranno salvati in DB
+     * riguardano le emoticons, gli emoji, gli hashtag, le occorrenze delle
+     * vecchie risorse lessicali e l'individuazione e conteggio delle nuove
+     * parole trovate.
      */
-    @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        processRequest(request, response);
+    private void storeResultsOperationMongo() {
+        storeEmoticonsIntoMongo();
+        storeEmojiIntoMongo();
+        storeHashtagsIntoMongo();
+        storeOldWordsIntoMongo();
+        storeNewWordsIntoMongo();
     }
-
-    /**
-     * Handles the HTTP <code>POST</code> method.
-     *
-     * @param request servlet request
-     * @param response servlet response
-     * @throws ServletException if a servlet-specific error occurs
-     * @throws IOException if an I/O error occurs
-     */
-    @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        processRequest(request, response);
-    }
-
-    /**
-     * Returns a short description of the servlet.
-     *
-     * @return a String containing servlet description
-     */
-    @Override
-    public String getServletInfo() {
-        return "Short description";
-    }// </editor-fold>
 
     /**
      * Procedura di salvataggio dei risultati delle emoticons in MongoDB. La
@@ -1376,7 +1340,6 @@ public class Analyser extends HttpServlet {
         }
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-        //System.out.println(bulkWrite.toString());
         System.out.println("COMPLETE!");
     }
 
@@ -1418,7 +1381,6 @@ public class Analyser extends HttpServlet {
         }
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-        //System.out.println(bulkWrite.toString());
         System.out.println("COMPLETE!");
     }
 
@@ -1458,7 +1420,6 @@ public class Analyser extends HttpServlet {
         }
 
         BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-        //System.out.println(bulkWrite.toString());
         System.out.println("COMPLETE!");
     }
 
@@ -1481,14 +1442,9 @@ public class Analyser extends HttpServlet {
                 BasicDBObject update = new BasicDBObject();
                 update.put("$set", new BasicDBObject("count_tweet", (Integer) word.getValue()));
                 listOp.add(new UpdateOneModel<>(query, update));
-//                    new UpdateOneModel<>(new Document("_id", 1),
-//                            new Document("$set", new Document("x", 2)));
             }
             BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-            //System.out.println(bulkWrite.toString());
-
         }
-
         System.out.println("COMPLETE!");
     }
 
@@ -1515,10 +1471,46 @@ public class Analyser extends HttpServlet {
                 listOp.add(new InsertOneModel<>(tempDoc));
             }
             BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-            //System.out.println(bulkWrite.toString());
-
         }
-
         System.out.println("COMPLETE!");
     }
+
+    // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
+    /**
+     * Handles the HTTP <code>GET</code> method.
+     *
+     * @param request servlet request
+     * @param response servlet response
+     * @throws ServletException if a servlet-specific error occurs
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    /**
+     * Handles the HTTP <code>POST</code> method.
+     *
+     * @param request servlet request
+     * @param response servlet response
+     * @throws ServletException if a servlet-specific error occurs
+     * @throws IOException if an I/O error occurs
+     */
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    /**
+     * Returns a short description of the servlet.
+     *
+     * @return a String containing servlet description
+     */
+    @Override
+    public String getServletInfo() {
+        return "Short description";
+    }// </editor-fold>
 }

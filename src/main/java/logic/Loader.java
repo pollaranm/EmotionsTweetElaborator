@@ -298,7 +298,49 @@ public class Loader extends HttpServlet {
         System.out.println("#tot occurrences: " + totalOcc);
     }
 
+    /**
+     * Procedura di salvataggio delle risorse lessicali in MongoDB. Alla fine
+     * dell'elaborazione dei diversi file contenuti in una cartella, prende i
+     * risultati ottenuti e li memorizza in DB. Crea inoltre un indice sul campo
+     * 'word' per migliorare le prestazioni ed abilitare lo sharding.
+     *
+     * @param sentimentName Sentimento analizzato
+     * @param numRes Numero di file contenuti nella cartella 'sentimento'
+     * @param hash Hash contenente le risorse lessicali ed il loro conteggio
+     */
+    private void storeInMongo(String sentiment, int numRes, HashMap<String, Integer> hashSentiment) {
+        // Connessione alla singola istanza di MongoDB (mongod)
+        //MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+
+        // Connessione all'istanza Query Router del cluster (mongos)
+        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
+        MongoDatabase database = mongoClient.getDatabase("LabDB");
+        MongoCollection<Document> collection = database.getCollection(sentiment);
+        List<WriteModel<Document>> listOp = new LinkedList<>();
+
+        BasicDBObject indexObj = new BasicDBObject("word", 1);
+        collection.createIndex(indexObj);
+
+        BasicDBObject cmd = new BasicDBObject("shardCollection", "LabDB." + sentiment)
+                .append("key", new BasicDBObject("word", 1));
+        CommandResult res = mongoClient.getDB("admin").command(cmd);
+
+        for (Map.Entry word : hashSentiment.entrySet()) {
+            Float perc_res = new Float((int) word.getValue()) / numRes * 100;
+            Document tempDoc = new Document("word", (String) word.getKey())
+                    .append("count_res", (int) word.getValue())
+                    .append("perc_res", perc_res)
+                    .append("count_tweet", 0);
+            listOp.add(new InsertOneModel<>(tempDoc));
+        }
+
+        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
+
+        mongoClient.close();
+    }
+
     // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
+
     /**
      * Handles the HTTP <code>GET</code> method.
      *
@@ -336,43 +378,4 @@ public class Loader extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
-
-    private void storeInMongo(String sentiment, int numRes, HashMap<String, Integer> hashSentiment) {
-//        List<ServerAddress> servers = new ArrayList<>();
-//        servers.add(new ServerAddress("localhost", 27017));
-//        servers.add(new ServerAddress("localhost", 27018));
-//        servers.add(new ServerAddress("localhost", 27019));
-//        servers.add(new ServerAddress("localhost", 27020));
-//        MongoClient mongoClient = new MongoClient(servers);
-        MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
-        MongoDatabase database = mongoClient.getDatabase("LabDB");
-        MongoCollection<Document> collection = database.getCollection(sentiment);
-        List<WriteModel<Document>> listOp = new LinkedList<>();
-
-        BasicDBObject indexObj = new BasicDBObject("word", 1);
-//        IndexOptions indexPropObj = new IndexOptions().unique(true);
-//        collection.createIndex(indexObj, indexPropObj);
-        collection.createIndex(indexObj);
-
-        BasicDBObject cmd = new BasicDBObject("shardCollection", "LabDB." + sentiment)
-                .append("key", new BasicDBObject("word", 1));
-        CommandResult res = mongoClient.getDB("admin").command(cmd);
-
-//        System.out.println(res.toString());
-        for (Map.Entry word : hashSentiment.entrySet()) {
-            Float perc_res = new Float((int) word.getValue()) / numRes * 100;
-            Document tempDoc = new Document("word", (String) word.getKey())
-                    .append("count_res", (int) word.getValue())
-                    .append("perc_res", perc_res)
-                    .append("count_tweet", 0);
-            listOp.add(new InsertOneModel<>(tempDoc));
-        }
-
-        BulkWriteResult bulkWrite = collection.bulkWrite(listOp);
-        //System.out.println(bulkWrite.toString());
-
-        mongoClient.close();
-
-    }
-
 }

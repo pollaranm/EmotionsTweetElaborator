@@ -20,10 +20,6 @@ import javax.servlet.http.HttpServletResponse;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/**
- *
- * @author TTm
- */
 public class OracleManager extends HttpServlet {
 
     File dir = new File("C:/Dropbox/lex_res_temp");
