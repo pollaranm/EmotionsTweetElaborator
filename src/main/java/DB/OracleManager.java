@@ -2,18 +2,23 @@ package DB;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  *
@@ -45,6 +50,10 @@ public class OracleManager extends HttpServlet {
             dropDBProcedure();
         } else if (action.equals("createOracle")) {
             createDBProcedure();
+        } else if (action.equals("old_words")) {
+            getOldWordsResult(request, response);
+        } else if (action.equals("new_words")) {
+            getNewWordsResult(request, response);
         }
     }
 
@@ -102,7 +111,95 @@ public class OracleManager extends HttpServlet {
         }
     }
 
+    /**
+     * Metodo per il recupero delle parole già presenti tra le risorse lessicali
+     * che hanno avuto il maggior numero di occorrenze riscontrate nell'analisi
+     * dei tweet. In base al sentimento passato come parametro viene selezionata
+     * la relativa tabella e restituiti i primi 50 maggior frequenti termini. Il
+     * database puntato da questa funzione è Oracle. Il formato della rispota è
+     * "<parola>,<conteggio>", separati da "###".
+     *
+     * @param request Richiesta arrivata alla servlet contenente i vari
+     * parametri
+     * @param response Risposta che verrà elaborata e rispedita
+     */
+    private void getOldWordsResult(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            PrintWriter out = response.getWriter();
+            String sentiment = request.getParameter("sentiment");
+            response.setContentType("text/html;charset=UTF-8");
+            String res = "";
+            Class.forName(myDriver);
+            Connection conn = DriverManager.getConnection(myUrl, myUser, myPass);
+            String querySelect = "SELECT * FROM "
+                    + "(SELECT * FROM " + sentiment + " "
+                    + "WHERE COUNT_RES > 0 "
+                    + "ORDER BY COUNT_TWEET DESC) "
+                    + "WHERE ROWNUM <= 50";
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery(querySelect);
+            while (rs.next()) {
+                res += rs.getString("word") + "," + rs.getInt("count_tweet") + "###";
+            }
+            res = res.substring(0, res.length() - 3);
+            rs.close();
+            st.close();
+            conn.close();
+            out.print(res);
+        } catch (IOException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (SQLException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    /**
+     * Metodo per il recupero delle nuove parole non presenti nelle risorse
+     * lessicali che hanno avuto il maggior numero di occorrenze riscontrate
+     * nell'analisi dei tweet. In base al sentimento passato come parametro
+     * viene selezionata la relativa tabella e restituiti i primi 50 maggior
+     * frequenti termini. Il database puntato da questa funzione è Oracle. Il
+     * formato della rispota è "<parola>,<conteggio>", separati da "###".
+     *
+     * @param request Richiesta arrivata alla servlet contenente i vari
+     * parametri
+     * @param response Risposta che verrà elaborata e rispedita
+     */
+    private void getNewWordsResult(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            PrintWriter out = response.getWriter();
+            String sentiment = request.getParameter("sentiment");
+            response.setContentType("text/html;charset=UTF-8");
+            String res = "";
+            Class.forName(myDriver);
+            Connection conn = DriverManager.getConnection(myUrl, myUser, myPass);
+            String querySelect = "SELECT * FROM "
+                    + "(SELECT * FROM " + sentiment + " "
+                    + "WHERE COUNT_RES = 0 "
+                    + "ORDER BY COUNT_TWEET DESC) "
+                    + "WHERE ROWNUM <= 50";
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery(querySelect);
+            while (rs.next()) {
+                res += rs.getString("word") + "," + rs.getInt("count_tweet") + "###";
+            }
+            res = res.substring(0, res.length() - 3);
+            rs.close();
+            st.close();
+            conn.close();
+            out.print(res);
+        } catch (IOException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (SQLException ex) {
+            Logger.getLogger(OracleManager.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
 // <editor-fold defaultstate="collapsed" desc="HttpServlet methods. Click on the + sign on the left to edit the code.">
+
     /**
      * Handles the HTTP <code>GET</code> method.
      *
