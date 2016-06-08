@@ -166,10 +166,10 @@ public class Analyser extends HttpServlet {
 
             if (DBtype.equals("Mongo")) {
                 // Connessione alla singola istanza di MongoDB (mongod)
-                //MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
+                // mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
 
                 // Connessione all'istanza Query Router del cluster (mongos)
-                MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
+                mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
             }
 
             /**
