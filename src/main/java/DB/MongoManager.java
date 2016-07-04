@@ -6,18 +6,23 @@ import com.mongodb.DBObject;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientOptions;
 import com.mongodb.ServerAddress;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.bson.Document;
 
 public class MongoManager extends HttpServlet {
 
@@ -37,7 +42,6 @@ public class MongoManager extends HttpServlet {
 
         // Connessione alla singola istanza di MongoDB (mongod)
         //MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27017));
-        
         // Connessione all'istanza Query Router del cluster (mongos)
         MongoClient mongoClient = new MongoClient(new ServerAddress("localhost", 27016));
 
@@ -45,6 +49,10 @@ public class MongoManager extends HttpServlet {
             dropMongoProcedure(mongoClient);
         } else if (action.equals("createMongo")) {
             createMongoProcedure(mongoClient);
+        } else if (action.equals("emoji")) {
+            getEmojiResult(request, response, mongoClient);
+        } else if (action.equals("hashtag")) {
+            getHashtagResult(request, response, mongoClient);
         }
 
         mongoClient.close();
@@ -63,7 +71,8 @@ public class MongoManager extends HttpServlet {
 
     /**
      * Crea una collezione per ogni cartella/sentimento presente nella directory
-     * puntata dalla variabile 'dir' in testa alla classe e ne abilita lo sharding.
+     * puntata dalla variabile 'dir' in testa alla classe e ne abilita lo
+     * sharding.
      */
     private void createMongoProcedure(MongoClient mongoClient) {
         for (File sentiment : sentimentsFoldersList) {
@@ -110,5 +119,47 @@ public class MongoManager extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
+
+    private void getEmojiResult(HttpServletRequest request, HttpServletResponse response, MongoClient mongoClient) {
+        PrintWriter out = null;
+        try {
+            out = response.getWriter();
+            String sentiment = request.getParameter("sentiment");
+            MongoDatabase database = mongoClient.getDatabase("LabDB");
+            String res = "";
+            MongoCollection collection = database.getCollection("emoji");
+            FindIterable<Document> sorted = collection.find().sort(new BasicDBObject(sentiment, -1)).limit(10);
+            for (Document t : sorted) {
+                res += t.getString("html") + "," + t.getInteger(sentiment) + "###";
+            }
+            out.print(res);
+
+        } catch (IOException ex) {
+            Logger.getLogger(MongoManager.class.getName()).log(Level.SEVERE, null, ex);
+        } finally {
+            out.close();
+        }
+    }
+
+    private void getHashtagResult(HttpServletRequest request, HttpServletResponse response, MongoClient mongoClient) {
+        PrintWriter out = null;
+        try {
+            out = response.getWriter();
+            String sentiment = request.getParameter("sentiment");
+            MongoDatabase database = mongoClient.getDatabase("LabDB");
+            String res = "";
+            MongoCollection collection = database.getCollection("hashtag");
+            FindIterable<Document> sorted = collection.find().sort(new BasicDBObject(sentiment, -1)).limit(10);
+            for (Document t : sorted) {
+                res += t.getString("hashtag") + "," + t.getInteger(sentiment) + "###";
+            }
+            out.print(res);
+
+        } catch (IOException ex) {
+            Logger.getLogger(MongoManager.class.getName()).log(Level.SEVERE, null, ex);
+        } finally {
+            out.close();
+        }
+    }
 
 }

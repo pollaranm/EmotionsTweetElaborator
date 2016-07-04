@@ -58,16 +58,23 @@
             <button id="trust" class="btn btn-primary">TRUST</button>
             <h3 id="selection"></h3>
         </div>
-        <div id="old_words" style="width: 49% ; float: left">
-            <div id="old_words_cloud" class="wordcloud" style="width: 60% ; float: left"></div>
-            <div id="old_words_table" style="width: 30% ; float: right"></div>
-            
+        <div class="col-md-12">
+            <div class="col-md-4">
+                <div id="old_words_cloud" class="wordcloud" style="width: 60% ; float: left;"></div>
+                <div id="emoji_cloud" class="wordcloud" style="width: 60% ; float: left"></div>
+            </div>
+            <div class="col-md-4">
+                <div class="col-md-6" id="old_words_table"></div>
+                <div class="col-md-6" id="new_words_table" ></div>
+            </div>
+            <div class="col-md-4">
+                <div id="new_words_cloud" class="wordcloud" style="width: 60% ; float: right"></div>
+                <div  class="wordcloud" id="hashtag_cloud" style="width: 60% ; float: right"></div>
+            </div>
         </div>
-        <div id="new_words" style="width: 49% ; float: right">
-            <div id="new_words_table" style="width: 30% ; float: left"></div>
-            <div id="new_words_cloud" class="wordcloud" style="width: 60% ; float: right"></div>
-            
-        </div>
+        
+        
+        
     </body>
 
 </html>

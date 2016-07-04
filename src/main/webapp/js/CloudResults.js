@@ -56,6 +56,52 @@ $(document).on("click", "button", function () {
             alert(error);
         }
     });
+    
+    $.ajax({
+        type: "POST",
+        url: "MongoManager",
+        data: {action: "emoji", sentiment: sentiment},
+        success: function (data)
+        {
+            var array = new Array();
+            var splitted = data.split('###');
+            for (var i = 0; i < splitted.length; i++) {
+                var temp = splitted[i];
+                var inner = temp.split(',');
+                array.push({text: inner[0], weight: inner[1]+200});
+            }
+
+            //invoca la cloud usando data
+            $("#emoji_cloud").html("");
+            $("#emoji_cloud").jQCloud(array);
+        },
+        error: function (xhr, status, error) {
+            alert(error);
+        }
+    });
+    
+    $.ajax({
+        type: "POST",
+        url: "MongoManager",
+        data: {action: "hashtag", sentiment: sentiment},
+        success: function (data)
+        {
+            var array = new Array();
+            var splitted = data.split('###');
+            for (var i = 0; i < splitted.length; i++) {
+                var temp = splitted[i];
+                var inner = temp.split(',');
+                array.push({text: inner[0], weight: inner[1]});
+            }
+
+            //invoca la cloud usando data
+            $("#hashtag_cloud").html("");
+            $("#hashtag_cloud").jQCloud(array);
+        },
+        error: function (xhr, status, error) {
+            alert(error);
+        }
+    });
 
 });
 
